@@ -1,0 +1,58 @@
+{
+  "best_stage1_model": "SVM (RBF)",
+  "best_stage2_model": "Random Forest",
+  "stage1_results": {
+    "Random Forest": {
+      "accuracy": 0.7729329311568488,
+      "f1_weighted": 0.769956035169476,
+      "precision_macro": 0.8138442206285093,
+      "recall_macro": 0.7971336761367922,
+      "train_time": 2.712894916534424
+    },
+    "SVM (RBF)": {
+      "accuracy": 0.7982168204400284,
+      "f1_weighted": 0.796635971366435,
+      "precision_macro": 0.8304439166971136,
+      "recall_macro": 0.819905713040318,
+      "train_time": 485.06644320487976
+    },
+    "MLP": {
+      "accuracy": 0.7865063875088716,
+      "f1_weighted": 0.7843332115987838,
+      "precision_macro": 0.8227288796224903,
+      "recall_macro": 0.8093692125395968,
+      "train_time": 33.376368045806885
+    }
+  },
+  "stage2_results": {
+    "Random Forest": {
+      "accuracy": 0.7811891217953713,
+      "f1_weighted": 0.7799172677496212,
+      "precision_macro": 0.729515512291306,
+      "recall_macro": 0.6738280985830625,
+      "train_time": 0.8866796493530273
+    },
+    "SVM (RBF)": {
+      "accuracy": 0.7839164653627367,
+      "f1_weighted": 0.7508633577381425,
+      "precision_macro": 0.6768682542062099,
+      "recall_macro": 0.6353939051688237,
+      "train_time": 15.751972675323486
+    },
+    "MLP": {
+      "accuracy": 0.785241175095457,
+      "f1_weighted": 0.7515411408172136,
+      "precision_macro": 0.7280625683170121,
+      "recall_macro": 0.6170901766482801,
+      "train_time": 11.035617589950562
+    }
+  },
+  "pipeline_metrics": {
+    "stage1_accuracy": 0.7982168204400284,
+    "stage1_detection_rate": 0.6632899555832619,
+    "stage1_false_positive_rate": 0.023478529502625887,
+    "stage2_accuracy_on_flagged": 0.9317434210526315,
+    "e2e_detection_rate": 0.6632899555832619,
+    "e2e_classification_rate": 0.6180160523649965
+  }
+}
