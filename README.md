@@ -85,11 +85,27 @@ Python 3.8 or higher. numpy, pandas, scikit-learn, matplotlib, seaborn, requests
 
 The main takeaway: noise is more damaging than dropout to Stage 2, but Stage 1 is the bottleneck in both cases. Small upstream degradation causes disproportionately large downstream failures.
 
-Plots in `results/`:
+### Plots
 
 ![Model Comparison](results/model_comparison.png)
+
+*Left: Stage 1 results. All three models cluster around 0.77-0.80 accuracy, with SVM slightly ahead. Precision and recall are both above 0.80 for all models. Right: Stage 2 results. Accuracy is similar across models (~0.78), but recall drops noticeably (0.62-0.67) because the rare classes (R2L, U2R) are hard to catch.*
+
+![Confusion Matrices](results/confusion_matrices.png)
+
+*Left: Stage 1 (SVM). Correctly classifies 9483 normal and 8512 attack samples. The problem: 4321 attacks get misclassified as normal (missed entirely). Only 228 false positives. Right: Stage 2 (Random Forest). DoS is classified well (6566 correct), Probe is solid (2253 correct). R2L is the weak point: 1429 get confused with Probe and 261 with DoS. U2R has only 67 samples total and mostly gets labeled as other classes.*
+
 ![Noise Robustness](results/noise_robustness.png)
+
+*Three panels. Left: Stage 1 detection rate (red) actually increases from 0.66 to about 0.76 at moderate noise because noise pushes borderline samples over the decision boundary, but accuracy (blue) drops steadily. Middle: Stage 2 accuracy drops sharply from 0.93 down to about 0.45 at σ=0.5. Right: the cascading view showing that the end-to-end rate (magenta) falls well below both individual stage curves (dashed lines), demonstrating how errors compound through the pipeline.*
+
+![Feature Dropout](results/dropout_robustness.png)
+
+*Single plot with three lines. Stage 2 (green) degrades gradually from 0.93 to about 0.48 at 70% dropout. Stage 1 (blue) drops from 0.80 to about 0.52. The end-to-end rate (magenta) drops the fastest, going from 0.62 down to 0.12 at 70% dropout. All three lines diverge as dropout increases, showing the compounding effect gets worse under heavier degradation.*
+
 ![Feature Importance](results/feature_importance.png)
+
+*Left: Stage 1 detection is dominated by src_bytes (0.19 importance) and dst_bytes (0.09). These are the raw data volume features, which makes sense because DoS attacks transfer unusual amounts of data. Right: Stage 2 classification is led by count (0.11) and dst_host_diff_srv_rate (0.09). These are connection-pattern features that distinguish between attack strategies. The two stages rely on fundamentally different signals.*
 
 ## Project structure
 
