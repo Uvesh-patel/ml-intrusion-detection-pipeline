@@ -65,6 +65,32 @@ SVM with RBF kernel on 126K records takes a while. Expect 15 to 30 minutes total
 
 Python 3.8 or higher. numpy, pandas, scikit-learn, matplotlib, seaborn, requests. See `requirements.txt` for specific versions.
 
+## Results
+
+**Stage 1 (Binary Detection):** SVM with RBF kernel performed best at 79.8% accuracy and 79.7% weighted F1. False positive rate was only 2.3%, meaning almost no normal traffic gets wrongly flagged. Detection rate sits at 66.3%.
+
+**Stage 2 (Attack Classification):** Random Forest won with 78.1% accuracy. Good at identifying DoS and Probe (large training sets), struggles more with R2L and U2R (very few samples).
+
+**Full Pipeline:** End-to-end, 62% of attacks get both detected and correctly classified. Stage 2 in isolation is 93% accurate, but the pipeline only achieves 62% because Stage 1's misses propagate forward. That 31% gap is the cost of chaining imperfect components.
+
+**Robustness findings:**
+
+| Condition | Stage 1 | Stage 2 | End-to-End |
+|-----------|---------|---------|------------|
+| Clean data | 79.8% | 93.2% | 61.8% |
+| Noise σ=0.1 | 75.5% | 67.9% | 51.2% |
+| Noise σ=0.3 | 68.8% | 51.7% | 39.5% |
+| Dropout 30% | 66.3% | 81.7% | 44.3% |
+| Dropout 50% | 58.5% | 68.1% | 27.6% |
+
+The main takeaway: noise is more damaging than dropout to Stage 2, but Stage 1 is the bottleneck in both cases. Small upstream degradation causes disproportionately large downstream failures.
+
+Plots in `results/`:
+
+![Model Comparison](results/model_comparison.png)
+![Noise Robustness](results/noise_robustness.png)
+![Feature Importance](results/feature_importance.png)
+
 ## Project structure
 
 ```
