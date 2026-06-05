@@ -1,0 +1,94 @@
+# Multi-Stage ML Pipeline for Network Intrusion Detection
+
+Most intrusion detection research evaluates a single classifier in isolation. Train a model, report accuracy, done. But real systems aren't a single model. They're pipelines where one component feeds into the next, and when the first one screws up, everything downstream pays for it.
+
+This project builds a two-stage detection pipeline on the [NSL-KDD](https://www.unb.ca/cic/datasets/nsl.html) dataset and then systematically breaks it to see what happens.
+
+## What the pipeline does
+
+**Stage 1: Binary Detection.** Is this network traffic normal, or is it an attack?
+
+Three classifiers trained and compared: Random Forest, SVM with RBF kernel, and a Multi-Layer Perceptron. The best one is picked automatically based on weighted F1.
+
+**Stage 2: Attack Classification.** Once something gets flagged, what kind of attack is it?
+
+Same three model types, but trained only on attack traffic. They distinguish between four categories:
+
+- **DoS** (neptune, smurf, back, etc.)
+- **Probe** (portsweep, nmap, satan)
+- **R2L** (guess_passwd, ftp_write)
+- **U2R** (buffer_overflow, rootkit)
+
+Here's the thing: Stage 2 only sees what Stage 1 sends it. If Stage 1 misses an attack, Stage 2 never gets a chance. If Stage 1 falsely flags normal traffic, Stage 2 has to deal with that noise. This is where it gets interesting.
+
+## Robustness analysis
+
+After training, the pipeline gets stress-tested two ways.
+
+**Feature noise.** Gaussian noise added to input features at increasing levels (σ = 0.01 up to 0.5). Think of it as sensors being slightly off, or packet capture being lossy. The question is how fast does each stage break down, and how does that compound.
+
+**Feature dropout.** Random features zeroed out at increasing rates (5% up to 70%). This is what happens when a log field is empty or a monitoring tool misses something. Same question: what does the end-to-end picture look like when data is incomplete.
+
+Both experiments produce plots showing how Stage 1, Stage 2, and the full pipeline degrade as conditions worsen.
+
+## Output
+
+When you run it, you get:
+
+| File | What it shows |
+|------|---------------|
+| `results/model_comparison.png` | All three models compared at each stage (accuracy, precision, recall, F1) |
+| `results/confusion_matrices.png` | Confusion matrices for the best model at each stage |
+| `results/feature_importance.png` | Top 15 features driving detection and classification (from Random Forest) |
+| `results/noise_robustness.png` | Pipeline degradation curves under increasing feature noise |
+| `results/dropout_robustness.png` | Same but for missing features |
+| `results/summary.json` | All numbers in machine-readable format |
+
+## Dataset
+
+NSL-KDD. An improved version of the original KDD Cup '99 that fixes the well-known problems with duplicate records and proportional bias. Still one of the most used benchmarks for network IDS research.
+
+About 126,000 training records and 22,500 test records. 41 features per connection (duration, protocol, bytes transferred, error rates, and so on). Three categorical features get label-encoded, everything gets min-max scaled to [0, 1]. The dataset downloads automatically on first run, about 2 MB total.
+
+## How to run
+
+```bash
+pip install -r requirements.txt
+python main.py
+```
+
+The script downloads the data, preprocesses it, trains all models for both stages, runs the full pipeline end-to-end, then runs both robustness experiments and saves everything to `results/`.
+
+SVM with RBF kernel on 126K records takes a while. Expect 15 to 30 minutes total depending on your machine. Random Forest and MLP are fast. No GPU needed, everything runs on CPU with scikit-learn.
+
+## Requirements
+
+Python 3.8 or higher. numpy, pandas, scikit-learn, matplotlib, seaborn, requests. See `requirements.txt` for specific versions.
+
+## Project structure
+
+```
+ml-intrusion-detection-pipeline/
+    main.py                 Entry point, runs everything
+    requirements.txt
+    README.md
+    src/
+        __init__.py
+        data_loader.py      Downloads and preprocesses NSL-KDD
+        pipeline.py         Stage 1 + Stage 2 training and evaluation
+        robustness.py       Noise and dropout experiments, plotting
+    data/                   Created at runtime
+    results/                Created at runtime (plots + summary JSON)
+```
+
+## Things worth knowing
+
+The NSL-KDD test set is intentionally harder than the training set. It includes attack types that don't appear during training, so test accuracy being lower than training accuracy is expected. That's by design in the dataset, not a bug.
+
+Class imbalance is real. U2R has 52 training samples while DoS has nearly 46,000. The weighted F1 score handles this when picking the best model.
+
+The robustness experiments use a fixed random seed but results can still vary slightly across runs because of how SVM and MLP training works internally.
+
+## Author
+
+Uvesh Patel
