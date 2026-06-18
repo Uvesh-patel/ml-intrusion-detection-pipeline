@@ -1,0 +1,183 @@
+{
+  "dataset": "OCPP 1.6 WebSocket (Zenodo, Dalamagkas et al. 2025)",
+  "experiment": "cross_station_domain_adaptation",
+  "source": "Client 1",
+  "target": "Client 2",
+  "feature_layer": "TCP/IP (CICFlowMeter)",
+  "n_features": 82,
+  "same_station_accuracy": 0.9955,
+  "cross_station_baseline_accuracy": 0.998,
+  "cross_station_dan_accuracy": 0.9986,
+  "performance_drop_from_shift": -0.0025,
+  "recovery_from_dan": 0.0007,
+  "multiclass_baseline_f1": 1.0,
+  "multiclass_dan_f1": 0.998,
+  "conformal_prediction": {
+    "source_calibrated": {
+      "alpha_0.01": {
+        "alpha": 0.01,
+        "target_coverage": 0.99,
+        "empirical_coverage": 0.9979619565217391,
+        "coverage_valid": true,
+        "avg_set_size": 1.0,
+        "singleton_rate": 1.0,
+        "empty_rate": 0.0,
+        "n_samples": 1472,
+        "q_hat": 0.3207065217391209
+      },
+      "alpha_0.05": {
+        "alpha": 0.05,
+        "target_coverage": 0.95,
+        "empirical_coverage": 0.9979619565217391,
+        "coverage_valid": true,
+        "avg_set_size": 1.0,
+        "singleton_rate": 1.0,
+        "empty_rate": 0.0,
+        "n_samples": 1472,
+        "q_hat": 0.06000000000000005
+      },
+      "alpha_0.1": {
+        "alpha": 0.1,
+        "target_coverage": 0.9,
+        "empirical_coverage": 0.9979619565217391,
+        "coverage_valid": true,
+        "avg_set_size": 1.0,
+        "singleton_rate": 1.0,
+        "empty_rate": 0.0,
+        "n_samples": 1472,
+        "q_hat": 0.010000000000000009
+      },
+      "alpha_0.15": {
+        "alpha": 0.15,
+        "target_coverage": 0.85,
+        "empirical_coverage": 0.9979619565217391,
+        "coverage_valid": true,
+        "avg_set_size": 1.0,
+        "singleton_rate": 1.0,
+        "empty_rate": 0.0,
+        "n_samples": 1472,
+        "q_hat": 9.999999999998899e-05
+      },
+      "alpha_0.2": {
+        "alpha": 0.2,
+        "target_coverage": 0.8,
+        "empirical_coverage": 0.9979619565217391,
+        "coverage_valid": true,
+        "avg_set_size": 1.0,
+        "singleton_rate": 1.0,
+        "empty_rate": 0.0,
+        "n_samples": 1472,
+        "q_hat": 9.999999999998899e-05
+      }
+    },
+    "target_calibrated": {
+      "alpha_0.01": {
+        "alpha": 0.01,
+        "target_coverage": 0.99,
+        "empirical_coverage": 0.9980601357904947,
+        "coverage_valid": true,
+        "avg_set_size": 1.0,
+        "singleton_rate": 1.0,
+        "empty_rate": 0.0,
+        "n_samples": 1031,
+        "q_hat": 0.2601360544217687
+      },
+      "alpha_0.05": {
+        "alpha": 0.05,
+        "target_coverage": 0.95,
+        "empirical_coverage": 0.9980601357904947,
+        "coverage_valid": true,
+        "avg_set_size": 1.0,
+        "singleton_rate": 1.0,
+        "empty_rate": 0.0,
+        "n_samples": 1031,
+        "q_hat": 0.05095238095238078
+      },
+      "alpha_0.1": {
+        "alpha": 0.1,
+        "target_coverage": 0.9,
+        "empirical_coverage": 0.9980601357904947,
+        "coverage_valid": true,
+        "avg_set_size": 1.0,
+        "singleton_rate": 1.0,
+        "empty_rate": 0.0,
+        "n_samples": 1031,
+        "q_hat": 0.010000000000000009
+      },
+      "alpha_0.15": {
+        "alpha": 0.15,
+        "target_coverage": 0.85,
+        "empirical_coverage": 0.9980601357904947,
+        "coverage_valid": true,
+        "avg_set_size": 1.0,
+        "singleton_rate": 1.0,
+        "empty_rate": 0.0,
+        "n_samples": 1031,
+        "q_hat": 9.999999999998899e-05
+      },
+      "alpha_0.2": {
+        "alpha": 0.2,
+        "target_coverage": 0.8,
+        "empirical_coverage": 0.9980601357904947,
+        "coverage_valid": true,
+        "avg_set_size": 1.0,
+        "singleton_rate": 1.0,
+        "empty_rate": 0.0,
+        "n_samples": 1031,
+        "q_hat": 9.999999999998899e-05
+      }
+    },
+    "score_stats": {
+      "source_mean": 0.01321786684782608,
+      "source_std": 0.07229889931707488,
+      "source_max": 0.99,
+      "target_mean": 0.010133106575963712,
+      "target_std": 0.050106961706310044,
+      "target_max": 0.69
+    }
+  },
+  "top_shap_features": [
+    [
+      "Bwd Init Win Bytes",
+      0.03801672107251734
+    ],
+    [
+      "PSH Flag Count",
+      0.030324758640036475
+    ],
+    [
+      "Bwd Header Length",
+      0.025197662836793325
+    ],
+    [
+      "Bwd Packet Length Mean",
+      0.01643875377467319
+    ],
+    [
+      "ACK Flag Count",
+      0.016023336936211437
+    ],
+    [
+      "Bwd Packet Length Max",
+      0.015588860329035628
+    ],
+    [
+      "Total Length of Bwd Packet",
+      0.013782316857845483
+    ],
+    [
+      "Fwd Packet Length Min",
+      0.012522336308679423
+    ],
+    [
+      "Bwd PSH Flags",
+      0.011836759561918247
+    ],
+    [
+      "CWR Flag Count",
+      0.011642100417393011
+    ]
+  ],
+  "client_1_to_3_baseline": 0.9966,
+  "client_1_to_3_dan": 0.9986
+}

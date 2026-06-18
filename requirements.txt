@@ -4,3 +4,5 @@ scikit-learn>=1.3.0
 matplotlib>=3.7.0
 seaborn>=0.12.0
 requests>=2.31.0
+torch>=2.0.0
+shap>=0.42.0

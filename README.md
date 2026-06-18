@@ -1,136 +1,249 @@
-# Multi-Stage ML Pipeline for Network Intrusion Detection
+# Trustworthy Multi-Stage Intrusion Detection with Domain Adaptation
 
-Most intrusion detection research evaluates a single classifier in isolation. Train a model, report accuracy, done. But real systems aren't a single model. They're pipelines where one component feeds into the next, and when the first one screws up, everything downstream pays for it.
+A two-stage intrusion detection pipeline that measures how cascading errors and distribution shift break real IDS systems, then tries to fix them with domain adaptation, conformal prediction, and SHAP explainability. Tested on NSL-KDD, CICIDS2017, and OCPP 1.6 WebSocket charging station traffic.
 
-This project builds a two-stage detection pipeline on the [NSL-KDD](https://www.unb.ca/cic/datasets/nsl.html) dataset and then systematically breaks it to see what happens.
+<p align="center">
+  <img src="docs/images/pipeline_architecture.png" alt="Pipeline Architecture" width="75%"/>
+</p>
 
-## What the pipeline does
+## The Problem
 
-**Stage 1: Binary Detection.** Is this network traffic normal, or is it an attack?
+Most IDS research reports single-model accuracy on a clean test split and calls it a day. In practice, detection systems are pipelines: Stage 1 decides "attack or not," Stage 2 classifies the attack type. When Stage 1 misses an attack, Stage 2 never sees it. That missed sample is gone.
 
-Three classifiers trained and compared: Random Forest, SVM with RBF kernel, and a Multi-Layer Perceptron. The best one is picked automatically based on weighted F1.
+On NSL-KDD, Stage 1 catches 77.3% of attacks and Stage 2 scores 93% on what it receives. But end-to-end, only 62% of attacks get both detected *and* correctly classified. That 31-point gap comes entirely from Stage 1 errors cascading forward.
 
-**Stage 2: Attack Classification.** Once something gets flagged, what kind of attack is it?
+<p align="center">
+  <img src="docs/images/cascading_error.png" alt="Cascading Error Problem" width="65%"/>
+</p>
 
-Same three model types, but trained only on attack traffic. They distinguish between four categories:
+On top of that, NSL-KDD has an intentional train/test distribution shift (different attack proportions, unseen attack subtypes). Models trained in the lab degrade when tested on more realistic conditions. This project measures exactly how much, and tests what works to fix it.
 
-- **DoS** (neptune, smurf, back, etc.)
-- **Probe** (portsweep, nmap, satan)
-- **R2L** (guess_passwd, ftp_write)
-- **U2R** (buffer_overflow, rootkit)
+## What This Project Does
 
-Here's the thing: Stage 2 only sees what Stage 1 sends it. If Stage 1 misses an attack, Stage 2 never gets a chance. If Stage 1 falsely flags normal traffic, Stage 2 has to deal with that noise. This is where it gets interesting.
+### 1. Baseline Pipeline (`main.py`)
 
-## Robustness analysis
+Two-stage IDS with three classifiers (Random Forest, SVM, MLP) compared at each stage. RF wins both stages. Includes robustness analysis under Gaussian noise and feature dropout to show how noise at Stage 1 drags down the whole pipeline.
 
-After training, the pipeline gets stress-tested two ways.
+| Noise Level (σ) | Stage 1 Acc | Stage 2 Acc | End-to-End |
+|:---:|:---:|:---:|:---:|
+| 0.0 | 77.3% | 93.2% | 62.0% |
+| 0.1 | 73.0% | 68.0% | 47.0% |
+| 0.5 | 55.0% | 35.0% | 28.0% |
 
-**Feature noise.** Gaussian noise added to input features at increasing levels (σ = 0.01 up to 0.5). Think of it as sensors being slightly off, or packet capture being lossy. The question is how fast does each stage break down, and how does that compound.
+<p align="center">
+  <img src="results/noise_robustness.png" alt="Noise Robustness" width="90%"/>
+</p>
 
-**Feature dropout.** Random features zeroed out at increasing rates (5% up to 70%). This is what happens when a log field is empty or a monitoring tool misses something. Same question: what does the end-to-end picture look like when data is incomplete.
+### 2. Domain Adaptation (`run_domain_adaptation.py`)
 
-Both experiments produce plots showing how Stage 1, Stage 2, and the full pipeline degrade as conditions worsen.
+Three approaches to handle the train/test distribution shift:
 
-## Output
+| Method | Stage 1 Acc | Stage 2 Acc | What Happened |
+|--------|:---:|:---:|---------------|
+| Baseline RF (raw features) | 77.3% | 78.1% | No adaptation |
+| Separate AE + MMD | 78.4% | 77.2% | Aligned embeddings, but encoder not trained for classification |
+| **DAN (end-to-end)** | **85.5%** | 76.0% | Best for detection, but hurts multi-class |
+| DANN (gradient reversal) | 80.4% | 77.7% | Weaker signal than direct MMD |
 
-When you run it, you get:
+<p align="center">
+  <img src="docs/images/domain_adaptation_approaches.png" alt="Domain Adaptation Approaches" width="80%"/>
+</p>
 
-| File | What it shows |
-|------|---------------|
-| `results/model_comparison.png` | All three models compared at each stage (accuracy, precision, recall, F1) |
-| `results/confusion_matrices.png` | Confusion matrices for the best model at each stage |
-| `results/feature_importance.png` | Top 15 features driving detection and classification (from Random Forest) |
-| `results/noise_robustness.png` | Pipeline degradation curves under increasing feature noise |
-| `results/dropout_robustness.png` | Same but for missing features |
-| `results/summary.json` | All numbers in machine-readable format |
+The separate AE+MMD approach (Run 3 in the experiment log) reduced MMD by 95.9% but barely moved accuracy. The encoder learned domain-invariant features, but since it was trained for reconstruction, not classification, those features weren't useful for the downstream task.
 
-## Dataset
+DAN fixes this by jointly optimizing classification loss and MMD. The encoder learns features that are both discriminative *and* domain-invariant. Stage 1 jumped from 77.3% to 85.5%.
 
-NSL-KDD. An improved version of the original KDD Cup '99 that fixes the well-known problems with duplicate records and proportional bias. Still one of the most used benchmarks for network IDS research.
+Stage 2 didn't improve under *any* adaptation method. SHAP analysis (below) explains why: global alignment preserves volume-based features (bytes transferred) that Stage 1 needs, but flattens the behavioral patterns (connection counts, error rates) that Stage 2 relies on. Class-conditional alignment is the open problem here.
 
-About 126,000 training records and 22,500 test records. 41 features per connection (duration, protocol, bytes transferred, error rates, and so on). Three categorical features get label-encoded, everything gets min-max scaled to [0, 1]. The dataset downloads automatically on first run, about 2 MB total.
+Based on: Long et al. (2015) *Learning Transferable Features with Deep Adaptation Networks* (ICML); Ganin et al. (2016) *Domain-Adversarial Training of Neural Networks* (JMLR).
 
-## How to run
+### 3. Embedding Architecture Comparison (`run_embedding_comparison.py`)
+
+Does the encoder architecture matter, or is end-to-end training the real driver? Tested autoencoder, multi-scale 1D-CNN, and Transformer encoder, each with and without MMD alignment:
+
+| Architecture | Accuracy | F1 | MMD | Parameters |
+|-------------|:---:|:---:|:---:|:---:|
+| Raw features (no embedding) | 77.3% | 77.2% | 0.0530 | 0 |
+| Autoencoder | 74.9% | 74.6% | 0.0207 | 3,769 |
+| 1D-CNN | 76.7% | 76.6% | 0.0409 | 12,505 |
+| Transformer | 75.2% | 75.0% | 0.0075 | 29,209 |
+| CNN + MMD | 76.7% | 76.5% | 0.0041 | 12,505 |
+| **Transformer + MMD** | **79.4%** | **79.4%** | **0.00005** | 29,209 |
+
+Transformer+MMD is the only embedding that beats raw features. Its self-attention captures global feature interactions, and joint MMD training nearly eliminates distribution shift (MMD drops from 0.053 to 0.00005). But note: DAN still outperforms at 85.5% because it trains the classifier end-to-end, not just the encoder.
+
+The takeaway: architecture choice matters less than the training procedure. End-to-end adaptation (DAN) beats separate encode-then-classify across all architectures.
+
+### 4. Confidence-Aware Pipeline (`run_confidence_analysis.py`)
+
+The DAN model flags 5.3% of uncertain samples for human review and reaches 86.3% accuracy on the rest. Compare that to RF, which needs to flag 27.8% of samples to reach comparable accuracy.
+
+DAN is also better calibrated: ECE = 0.14 vs RF's ECE = 0.37. When DAN says "90% confident," it's correct about 90% of the time. RF's confidence scores are less reliable.
+
+### 5. Conformal Prediction (`run_full_evaluation.py`)
+
+Prediction sets with formal coverage guarantees, using split conformal prediction (Vovk et al., 2005). Two calibration modes compared:
+
+| Calibration Mode | Coverage at α=0.10 | Guarantee Met? |
+|:---|:---:|:---:|
+| Source-calibrated (training CV) | 77.3% | **NO** |
+| Target-calibrated (test split) | 90.7% | **YES** |
+
+Source-calibrated conformal prediction fails under shift. The calibration scores from training (mean=0.0038) are too low because the model is nearly perfect on source data. At test time, the shift causes far higher nonconformity scores, and the prediction sets become useless singletons with broken coverage.
+
+Target-calibrated conformal works: coverage holds at 90.7% with average set size 1.20 (80.5% singletons, meaning most predictions are still decisive).
+
+This is a quantitative argument for domain adaptation: without it, even methods with mathematical guarantees give false safety assurances.
+
+Based on: Angelopoulos & Bates (2021) *A Gentle Introduction to Conformal Prediction* (arXiv:2107.07511).
+
+### 6. SHAP Explainability (`run_full_evaluation.py`)
+
+TreeSHAP on RF models reveals that the two stages rely on fundamentally different feature families:
+
+- **Stage 1** (detection): volume features — `src_bytes` (0.104), `dst_bytes` (0.061), `dst_host_srv_count` (0.042)
+- **Stage 2** (classification): behavioral features — `count` (0.034), `dst_host_serror_rate` (0.031), `dst_host_same_src_port_rate` (0.025)
+
+<p align="center">
+  <img src="results/feature_importance.png" alt="Feature Importance" width="90%"/>
+</p>
+
+This explains the domain adaptation results: global MMD alignment preserves volume distributions (good for Stage 1) but disrupts behavioral boundaries (bad for Stage 2). R2L and U2R attacks, which lack the obvious byte-count signature of DoS, get confused. Misclassification analysis confirms: 22.7% error rate, and the top error drivers are volume features.
+
+Based on: Lundberg & Lee (2017) *A Unified Approach to Interpreting Model Predictions* (NeurIPS).
+
+### 7. CICIDS2017 Validation (`run_cicids_experiment.py`)
+
+Pipeline validated on a modern dataset (2.8M flows, 78 CICFlowMeter features). Results: 99.88% binary detection, 99.98% attack classification. These near-perfect scores exist because the standard random train/test split preserves the same distribution. The contrast with NSL-KDD (77.3% under shift) shows that the shift is the real problem, not the model.
+
+Dataset: Sharafaldin et al. (2018) *Toward Generating a New Intrusion Detection Dataset* (ICISSP).
+
+### 8. OCPP WebSocket IDS (`run_ocpp_experiment.py`)
+
+Cross-station domain adaptation on EV charging traffic using OCPP 1.6. The dataset has 3 clients (charging stations), so training on Client 1 and testing on Client 2 creates a natural shift.
+
+| Scenario | Accuracy |
+|:---|:---:|
+| Same-station (no shift) | 99.55% |
+| Cross-station Client 1 → 2 | 99.80% |
+| Cross-station + DAN | 99.86% |
+
+The shift between stations is mild (same protocol, similar traffic patterns), so DAN adds almost nothing. The interesting experiment is the cross-dataset one below.
+
+Dataset: Dalamagkas et al. (2025) *Federated Detection of OCPP 1.6 Cyberattacks* (arXiv:2502.01569).
+
+### 9. Cross-Dataset Transfer (`run_cross_dataset_experiment.py`)
+
+Train on CICIDS2017 (enterprise office network, 2017), deploy on OCPP (EV charging stations, 2024). Both datasets share 56 CICFlowMeter features but come from completely different environments.
+
+| Scenario | Accuracy | CP Coverage (α=0.10) |
+|:---|:---:|:---:|
+| In-domain (OCPP only) | 99.47% | — |
+| Cross-dataset (no adaptation) | 20.00% | 20.0% (**violated**) |
+| Cross-dataset + DAN | 22.40% | — |
+
+Everything collapses. A model trained on enterprise traffic is useless on charging station traffic. DAN barely helps (+2.4pp). Conformal prediction coverage drops from 90% to 20%.
+
+This is an honest negative result: simple feature alignment can't bridge fundamentally different network environments. The distribution shift here isn't a matter of proportions shifting; it's entirely different traffic behavior. More sophisticated adaptation (or environment-specific fine-tuning) is needed.
+
+## Results at a Glance
+
+| Metric | NSL-KDD | CICIDS2017 |
+|:---|:---:|:---:|
+| Stage 1 baseline RF | 77.3% | 99.88% |
+| Stage 1 DAN-adapted | 85.5% | — |
+| Stage 1 DAN + confidence gating | 86.3% | — |
+| Stage 2 F1 (weighted) | 78.0% | 99.98% |
+| CP coverage (α=0.10, target-cal) | 90.7% | 99.88% |
+| End-to-end baseline | 62.0% | — |
+
+<p align="center">
+  <img src="results/confusion_matrices.png" alt="Confusion Matrices" width="80%"/>
+</p>
+
+## Project Structure
+
+```
+cyber_defense_pipeline/
+├── main.py                          Baseline pipeline (RF, SVM, MLP) + robustness
+├── run_domain_adaptation.py         DAN, DANN, AE+MMD comparison
+├── run_embedding_comparison.py      AE vs 1D-CNN vs Transformer embeddings
+├── run_confidence_analysis.py       Uncertainty estimation + selective prediction
+├── run_full_evaluation.py           Conformal prediction + SHAP on NSL-KDD
+├── run_cicids_experiment.py         CICIDS2017 validation
+├── run_ocpp_experiment.py           OCPP WebSocket cross-station experiment
+├── run_cross_dataset_experiment.py  CICIDS2017 → OCPP cross-dataset transfer
+├── download_ocpp.py                 OCPP dataset downloader (Zenodo)
+├── experiment_log.md                Lab notebook — what was tried and what happened
+├── literature_review.md             14 papers covering the main components
+├── references.md                    Full citations with open-access links
+├── requirements.txt
+├── src/
+│   ├── data_loader.py               NSL-KDD download + preprocessing (41 features)
+│   ├── data_loader_cicids.py         CICIDS2017 download from Hugging Face
+│   ├── data_loader_ocpp.py           OCPP 1.6 WebSocket data (TCP/IP + App layers)
+│   ├── pipeline.py                   Two-stage training and end-to-end evaluation
+│   ├── embedding.py                  Autoencoder (41→32→16→32→41)
+│   ├── embedding_sequential.py       1D-CNN and Transformer embedding architectures
+│   ├── domain_adaptation.py          MMD computation + AE alignment training
+│   ├── dan_model.py                  DAN and DANN (end-to-end with gradient reversal)
+│   ├── confidence.py                 Calibration (ECE) + selective prediction
+│   ├── conformal.py                  Split conformal prediction (source + target cal)
+│   ├── explainability.py             TreeSHAP attribution + misclassification analysis
+│   └── robustness.py                 Noise/dropout stress testing + visualization
+├── docs/images/                     Architecture diagrams
+├── data/                            Auto-downloaded at runtime
+└── results/                         JSON metrics + plots from each experiment
+```
+
+## How to Run
 
 ```bash
 pip install -r requirements.txt
-python main.py
+
+# Each script is self-contained — run whichever experiments you want
+python main.py                          # Baseline + robustness (~20 min)
+python run_domain_adaptation.py         # DAN/DANN comparison (~10 min)
+python run_embedding_comparison.py      # Architecture comparison (~15 min)
+python run_confidence_analysis.py       # Confidence gating (~5 min)
+python run_full_evaluation.py           # Conformal + SHAP (~3 min)
+python run_cicids_experiment.py         # CICIDS2017 (~10 min, downloads ~843 MB)
+python run_ocpp_experiment.py           # OCPP WebSocket (~2 min, needs download_ocpp.py first)
+python run_cross_dataset_experiment.py  # CICIDS→OCPP cross-dataset (~5 min)
 ```
 
-The script downloads the data, preprocesses it, trains all models for both stages, runs the full pipeline end-to-end, then runs both robustness experiments and saves everything to `results/`.
+NSL-KDD downloads automatically (5 MB). CICIDS2017 downloads from Hugging Face (~843 MB). For OCPP, run `python download_ocpp.py` first (10 MB from Zenodo, uses curl).
 
-SVM with RBF kernel on 126K records takes a while. Expect 15 to 30 minutes total depending on your machine. Random Forest and MLP are fast. No GPU needed, everything runs on CPU with scikit-learn.
+No GPU required. Python 3.8+.
 
-## Requirements
+## Datasets
 
-Python 3.8 or higher. numpy, pandas, scikit-learn, matplotlib, seaborn, requests. See `requirements.txt` for specific versions.
+| Dataset | Source | Features | Size | Access |
+|:---|:---|:---:|:---:|:---|
+| NSL-KDD | Tavallaee et al. (2009) | 41 | 5 MB | [GitHub](https://github.com/defcom17/NSL_KDD) |
+| CICIDS2017 | Sharafaldin et al. (2018) | 78 | 843 MB | [Hugging Face](https://huggingface.co/datasets/c01dsnap/CIC-IDS2017) |
+| OCPP 1.6 WebSocket | Dalamagkas et al. (2025) | 87 (TCP) / 49 (App) | 10 MB | [Zenodo](https://zenodo.org/records/14887131) |
 
-## Results
+## Open Questions
 
-**Stage 1 (Binary Detection):** SVM with RBF kernel performed best at 79.8% accuracy and 79.7% weighted F1. False positive rate was only 2.3%, meaning almost no normal traffic gets wrongly flagged. Detection rate sits at 66.3%.
+- **Class-conditional domain alignment:** align Stage 2 per-class instead of globally, to preserve behavioral feature boundaries
+- **End-to-end conformal guarantees:** how to compose conformal sets across multi-stage pipelines
+- **Cross-environment transfer:** the CICIDS→OCPP experiment (20% accuracy) shows simple MMD alignment isn't enough when environments are fundamentally different
 
-**Stage 2 (Attack Classification):** Random Forest won with 78.1% accuracy. Good at identifying DoS and Probe (large training sets), struggles more with R2L and U2R (very few samples).
+## References
 
-**Full Pipeline:** End-to-end, 62% of attacks get both detected and correctly classified. Stage 2 in isolation is 93% accurate, but the pipeline only achieves 62% because Stage 1's misses propagate forward. That 31% gap is the cost of chaining imperfect components.
+Full citations with open-access links in [`references.md`](references.md).
 
-**Robustness findings:**
-
-| Condition | Stage 1 | Stage 2 | End-to-End |
-|-----------|---------|---------|------------|
-| Clean data | 79.8% | 93.2% | 61.8% |
-| Noise σ=0.1 | 75.5% | 67.9% | 51.2% |
-| Noise σ=0.3 | 68.8% | 51.7% | 39.5% |
-| Dropout 30% | 66.3% | 81.7% | 44.3% |
-| Dropout 50% | 58.5% | 68.1% | 27.6% |
-
-The main takeaway: noise is more damaging than dropout to Stage 2, but Stage 1 is the bottleneck in both cases. Small upstream degradation causes disproportionately large downstream failures.
-
-### Plots
-
-![Model Comparison](results/model_comparison.png)
-
-*Left: Stage 1 results. All three models cluster around 0.77-0.80 accuracy, with SVM slightly ahead. Precision and recall are both above 0.80 for all models. Right: Stage 2 results. Accuracy is similar across models (~0.78), but recall drops noticeably (0.62-0.67) because the rare classes (R2L, U2R) are hard to catch.*
-
-![Confusion Matrices](results/confusion_matrices.png)
-
-*Left: Stage 1 (SVM). Correctly classifies 9483 normal and 8512 attack samples. The problem: 4321 attacks get misclassified as normal (missed entirely). Only 228 false positives. Right: Stage 2 (Random Forest). DoS is classified well (6566 correct), Probe is solid (2253 correct). R2L is the weak point: 1429 get confused with Probe and 261 with DoS. U2R has only 67 samples total and mostly gets labeled as other classes.*
-
-![Noise Robustness](results/noise_robustness.png)
-
-*Three panels. Left: Stage 1 detection rate (red) actually increases from 0.66 to about 0.76 at moderate noise because noise pushes borderline samples over the decision boundary, but accuracy (blue) drops steadily. Middle: Stage 2 accuracy drops sharply from 0.93 down to about 0.45 at σ=0.5. Right: the cascading view showing that the end-to-end rate (magenta) falls well below both individual stage curves (dashed lines), demonstrating how errors compound through the pipeline.*
-
-![Feature Dropout](results/dropout_robustness.png)
-
-*Single plot with three lines. Stage 2 (green) degrades gradually from 0.93 to about 0.48 at 70% dropout. Stage 1 (blue) drops from 0.80 to about 0.52. The end-to-end rate (magenta) drops the fastest, going from 0.62 down to 0.12 at 70% dropout. All three lines diverge as dropout increases, showing the compounding effect gets worse under heavier degradation.*
-
-![Feature Importance](results/feature_importance.png)
-
-*Left: Stage 1 detection is dominated by src_bytes (0.19 importance) and dst_bytes (0.09). These are the raw data volume features, which makes sense because DoS attacks transfer unusual amounts of data. Right: Stage 2 classification is led by count (0.11) and dst_host_diff_srv_rate (0.09). These are connection-pattern features that distinguish between attack strategies. The two stages rely on fundamentally different signals.*
-
-## Project structure
-
-```
-ml-intrusion-detection-pipeline/
-    main.py                 Entry point, runs everything
-    requirements.txt
-    README.md
-    src/
-        __init__.py
-        data_loader.py      Downloads and preprocesses NSL-KDD
-        pipeline.py         Stage 1 + Stage 2 training and evaluation
-        robustness.py       Noise and dropout experiments, plotting
-    data/                   Created at runtime
-    results/                Created at runtime (plots + summary JSON)
-```
-
-## Things worth knowing
-
-The NSL-KDD test set is intentionally harder than the training set. It includes attack types that don't appear during training, so test accuracy being lower than training accuracy is expected. That's by design in the dataset, not a bug.
-
-Class imbalance is real. U2R has 52 training samples while DoS has nearly 46,000. The weighted F1 score handles this when picking the best model.
-
-The robustness experiments use a fixed random seed but results can still vary slightly across runs because of how SVM and MLP training works internally.
+1. Long et al. (2015) *Learning Transferable Features with Deep Adaptation Networks* — [ICML](https://arxiv.org/abs/1502.01508)
+2. Ganin et al. (2016) *Domain-Adversarial Training of Neural Networks* — [JMLR](https://arxiv.org/abs/1505.07818)
+3. Gretton et al. (2012) *A Kernel Two-Sample Test* — [JMLR](https://jmlr.org/papers/v13/gretton12a.html)
+4. Angelopoulos & Bates (2021) *Conformal Prediction and Distribution-Free Uncertainty Quantification* — [arXiv:2107.07511](https://arxiv.org/abs/2107.07511)
+5. Lundberg & Lee (2017) *A Unified Approach to Interpreting Model Predictions* — [NeurIPS](https://arxiv.org/abs/1705.07874)
+6. Vovk, Gammerman, Shafer (2005) *Algorithmic Learning in a Random World* — Springer
+7. Tavallaee et al. (2009) *A Detailed Analysis of the KDD CUP 99 Dataset* — [IEEE CISDA](https://www.unb.ca/cic/datasets/nsl.html)
+8. Sharafaldin et al. (2018) *Toward Generating a New Intrusion Detection Dataset* — [ICISSP](https://www.unb.ca/cic/datasets/ids-2017.html)
+9. Dalamagkas et al. (2025) *Federated Detection of OCPP 1.6 Cyberattacks* — [arXiv:2502.01569](https://arxiv.org/abs/2502.01569)
 
 ## Author
 
-Uvesh Patel
+Uvesh Patel — University of Messina (M.Sc. Data Science / Cognitive Science)
